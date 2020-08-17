@@ -1,4 +1,8 @@
-# Marker
+# Marker for Avatar 3.0
+Forked and changed for Avatar 3.0 by [Esnya](https://github.com/esnya).
+
+(Original Document)
+
 VRC Marker for presentation room like drawing anywhere
 
 [Guide for adding to your avatar](https://www.youtube.com/watch?v=Pi7i4sF_BgQ&feature=youtu.be)

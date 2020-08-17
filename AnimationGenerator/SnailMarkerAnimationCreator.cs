@@ -4,5 +4,5 @@ using UnityEngine;
 
 [RequireComponent(typeof(TrailRenderer))]
 public class SnailMarkerAnimationCreator : MonoBehaviour {
-    
+
 }
