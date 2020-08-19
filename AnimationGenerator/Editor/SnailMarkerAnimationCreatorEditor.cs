@@ -214,16 +214,17 @@ public class SnailMarkerAnimationCreatorEditor : Editor
             descriptor.expressionParameters = parameters;
         }
 
-        var emptySlot = parameters.parameters.Select((p, i) => new { i, p.name }).First(a => a.name == null || a.name == "").i;
-        if (emptySlot >= parameters.parameters.Length) {
+        var emptySlot = ArrayUtility.FindIndex(parameters.parameters, p => string.IsNullOrEmpty(p.name));
+        if (emptySlot < 0) {
             Debug.LogError("Parameter slots are full.");
             return;
         }
 
-        parameters.parameters[emptySlot] = new VRCExpressionParameters.Parameter() {
+        parameters.parameters = parameters.parameters.Select((p, i) => i == emptySlot ? new VRCExpressionParameters.Parameter() {
             name = parameterName,
             valueType = VRCExpressionParameters.ValueType.Int,
-        };
+        } : p).ToArray();
+        EditorUtility.SetDirty(parameters);
     }
 
     private void SetupExpressionMenu(string parameterName) {
@@ -257,11 +258,12 @@ public class SnailMarkerAnimationCreatorEditor : Editor
         if (menu == null) {
             descriptor.expressionsMenu = markerMenu;
         } else {
-            menu.controls = menu.controls.Append(new VRCExpressionsMenu.Control() {
+            menu.controls.Add(new VRCExpressionsMenu.Control() {
                 name = "Marker",
                 type = VRCExpressionsMenu.Control.ControlType.SubMenu,
                 subMenu = markerMenu
-            }).ToList();
+            });
+            EditorUtility.SetDirty(menu);
         }
     }
 
