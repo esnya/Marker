@@ -20,11 +20,6 @@ public class SnailMarkerAnimationCreatorEditor : Editor
     }
     public override void OnInspectorGUI()
     {
-        // if (GUILayout.Button("Debug") && findAvatarAndAnimationPath(obj.transform)) {
-        //     var descriptor = avatar.GetComponent<VRCAvatarDescriptor>();
-        //     Debug.Log(descriptor.expressionParameters.parameters.Count(p => p.name == "MarkerState"));
-        // }
-
         if (!GUILayout.Button("Do everything"))
             return;
         DoEverything();
@@ -99,9 +94,9 @@ public class SnailMarkerAnimationCreatorEditor : Editor
 
         DuplicateMaterial();
         WriteAnimations();
-        SetupLayer();
-        SetupExpressionParameters();
-        SetupExpressionMenu();
+        var parameterName = SetupLayer();
+        SetupExpressionParameters(parameterName);
+        SetupExpressionMenu(parameterName);
         Cleanup();
     }
 
@@ -132,33 +127,35 @@ public class SnailMarkerAnimationCreatorEditor : Editor
         WriteAsset(draw, exportPath + "Drawing.anim");
     }
 
-    private AnimatorState AddState(AnimatorStateMachine stateMachine, string name, AnimationClip clip, int threshold) {
+    private AnimatorState AddState(string assetPath, AnimatorStateMachine stateMachine, string name, AnimationClip clip, int threshold, string parameterName) {
         var state = new AnimatorState(){
             name = name,
             motion = clip,
         };
         stateMachine.AddState(state, Vector3.zero);
+        AssetDatabase.AddObjectToAsset(state, assetPath);
 
         var transition = stateMachine.AddAnyStateTransition(state);
         transition.conditions = new [] {
             new AnimatorCondition() {
                 mode = AnimatorConditionMode.Equals,
-                parameter = "MarkerState",
+                parameter = parameterName,
                 threshold = threshold,
             },
         };
         transition.canTransitionToSelf = false;
         transition.duration = 0;
         transition.hasExitTime = false;
+        AssetDatabase.AddObjectToAsset(transition, assetPath);
 
         return state;
     }
-    private void SetupLayer()
+    private string SetupLayer()
     {
         VRCAvatarDescriptor descriptor = avatar.gameObject.GetComponent<VRCAvatarDescriptor>();
         descriptor.customizeAnimationLayers = true;
 
-        var found = descriptor.baseAnimationLayers.FirstOrDefault(layer => layer.type == VRCAvatarDescriptor.AnimLayerType.FX).animatorController as AnimatorController;
+        var found = descriptor.baseAnimationLayers.FirstOrDefault(l => l.type == VRCAvatarDescriptor.AnimLayerType.FX).animatorController as AnimatorController;
         var controller = found;
 
         if (controller == null) {
@@ -170,8 +167,8 @@ public class SnailMarkerAnimationCreatorEditor : Editor
         }
         if (found != controller) {
             descriptor.baseAnimationLayers = descriptor.baseAnimationLayers
-                .Select(layer => {
-                    if (layer.type != VRCAvatarDescriptor.AnimLayerType.FX) return layer;
+                .Select(l => {
+                    if (l.type != VRCAvatarDescriptor.AnimLayerType.FX) return l;
 
                     return new VRCAvatarDescriptor.CustomAnimLayer() {
                         type = VRCAvatarDescriptor.AnimLayerType.FX,
@@ -184,25 +181,29 @@ public class SnailMarkerAnimationCreatorEditor : Editor
                 .ToArray();
         }
 
-        if (controller.parameters.Count(p => p.name == "MarkerState") > 0 || controller.layers.Count(l => l.name == "Marker") > 0) {
-            Debug.Log("Skipping to setup FX layer controller. Please setup manually.");
-            return;
-        }
+        var assetPath = AssetDatabase.GetAssetPath(controller);
 
-        controller.AddParameter("MarkerState", AnimatorControllerParameterType.Int);
+        var parameterName = controller.MakeUniqueParameterName("MarkerState");
+        controller.AddParameter(parameterName, AnimatorControllerParameterType.Int);
 
-        controller.AddLayer("Marker");
-        var markerLayer = controller.layers.FirstOrDefault(l => l.name == "Marker");
+        var markerLayer = new AnimatorControllerLayer();
+        markerLayer.name = controller.MakeUniqueLayerName("Marker");
+        markerLayer.stateMachine = new AnimatorStateMachine();
+        markerLayer.stateMachine.name = markerLayer.name;
+        markerLayer.stateMachine.hideFlags = HideFlags.HideInHierarchy;
         markerLayer.defaultWeight = 1.0f;
 
-        markerLayer.stateMachine.defaultState = AddState(markerLayer.stateMachine, "Wait", null, 0);
-        AddState(markerLayer.stateMachine, "Drawing", AssetDatabase.LoadAssetAtPath<AnimationClip>(exportPath + "Drawing.anim"), 1);
-        AddState(markerLayer.stateMachine, "Erase All", AssetDatabase.LoadAssetAtPath<AnimationClip>(exportPath + "EraseAll.anim"), 2);
+        markerLayer.stateMachine.defaultState = AddState(assetPath, markerLayer.stateMachine, "Wait", null, 0, parameterName);
+        AddState(assetPath, markerLayer.stateMachine, "Drawing", AssetDatabase.LoadAssetAtPath<AnimationClip>(exportPath + "Drawing.anim"), 1, parameterName);
+        AddState(assetPath, markerLayer.stateMachine, "Erase All", AssetDatabase.LoadAssetAtPath<AnimationClip>(exportPath + "EraseAll.anim"), 2, parameterName);
 
-        AssetDatabase.SaveAssets();
+        AssetDatabase.AddObjectToAsset(markerLayer.stateMachine, assetPath);
+        controller.AddLayer(markerLayer);
+
+        return parameterName;
     }
 
-    private void SetupExpressionParameters() {
+    private void SetupExpressionParameters(string parameterName) {
         VRCAvatarDescriptor descriptor = avatar.gameObject.GetComponent<VRCAvatarDescriptor>();
         descriptor.customExpressions = true;
 
@@ -211,28 +212,46 @@ public class SnailMarkerAnimationCreatorEditor : Editor
             AssetDatabase.CopyAsset(AssetDatabase.FindAssets("MarkerParametersTemplate t:VRCExpressionParameters").Select(AssetDatabase.GUIDToAssetPath).FirstOrDefault(), exportPath + "Parameters.asset");
             parameters = AssetDatabase.LoadAssetAtPath<VRCExpressionParameters>(exportPath + "Parameters.asset");
             descriptor.expressionParameters = parameters;
-        } else if (parameters.parameters.Count(p => p.name == "MarkerState") == 0) {
-            try {
-                var emptyIndex = parameters.parameters.Select((p, i) => new { i, p.name }).First(a => a.name == null || a.name == "").i;
-                parameters.parameters = parameters.parameters.Select((p, i) => {
-                    if (i != emptyIndex) return p;
-                    return new VRCExpressionParameters.Parameter() {
-                        name = "MarkerState",
-                        valueType = VRCExpressionParameters.ValueType.Int,
-                    };
-                }).ToArray();
-            } catch {
-                Debug.Log("Skipping to add parameter `MarkerState`. Please add manually.");
-            }
         }
+
+        var emptySlot = parameters.parameters.Select((p, i) => new { i, p.name }).First(a => a.name == null || a.name == "").i;
+        if (emptySlot >= parameters.parameters.Length) {
+            Debug.LogError("Parameter slots are full.");
+            return;
+        }
+
+        parameters.parameters[emptySlot] = new VRCExpressionParameters.Parameter() {
+            name = parameterName,
+            valueType = VRCExpressionParameters.ValueType.Int,
+        };
     }
-    private void SetupExpressionMenu() {
+
+    private void SetupExpressionMenu(string parameterName) {
         VRCAvatarDescriptor descriptor = avatar.gameObject.GetComponent<VRCAvatarDescriptor>();
         descriptor.customExpressions = true;
 
-        AssetDatabase.CopyAsset(AssetDatabase.FindAssets("MarkerMenuTemplate t:VRCExpressionsMenu").Select(AssetDatabase.GUIDToAssetPath).FirstOrDefault(), exportPath + "MarkerMenu.asset");
-        var markerMenu = AssetDatabase.LoadAssetAtPath<VRCExpressionsMenu>(exportPath + "MarkerMenu.asset");
-        AssetDatabase.SaveAssets();
+        var markerMenu = new VRCExpressionsMenu() {
+            name = "Marker",
+            controls = new List<VRCExpressionsMenu.Control>(),
+        };
+        markerMenu.controls.Add(new VRCExpressionsMenu.Control() {
+            name = "Draw",
+            type = VRCExpressionsMenu.Control.ControlType.Button,
+            parameter = new VRCExpressionsMenu.Control.Parameter() {
+                name = parameterName,
+            },
+            value = 1,
+        });
+        markerMenu.controls.Add(new VRCExpressionsMenu.Control() {
+            name = "Erase All",
+            type = VRCExpressionsMenu.Control.ControlType.Button,
+            parameter = new VRCExpressionsMenu.Control.Parameter() {
+                name = parameterName,
+            },
+            value = 2,
+        });
+
+        WriteAsset(markerMenu, exportPath + "MarkerMenu.asset");
 
         var menu = descriptor.expressionsMenu;
         if (menu == null) {
@@ -250,6 +269,8 @@ public class SnailMarkerAnimationCreatorEditor : Editor
     {
         // Remove this script from the avatar so that VRC is happy.
         DestroyImmediate(obj.gameObject.GetComponent<SnailMarkerAnimationCreator>());
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
     }
 
     private void WriteAsset(Object asset, string path)
