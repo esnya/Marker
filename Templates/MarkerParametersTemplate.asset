@@ -11,7 +11,7 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: -1506855854, guid: 67cc4cb7839cd3741b63733d5adf0442, type: 3}
   m_Name: MarkerParametersTemplate
-  m_EditorClassIdentifier: 
+  m_EditorClassIdentifier:
   parameters:
   - name: VRCEmote
     valueType: 0
@@ -19,29 +19,29 @@ MonoBehaviour:
     valueType: 1
   - name: VRCFaceBlendV
     valueType: 1
-  - name: MarkerState
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0
-  - name: 
+  - name:
     valueType: 0

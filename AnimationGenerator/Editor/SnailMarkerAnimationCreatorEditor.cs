@@ -13,6 +13,10 @@ using VRC.SDK3.Avatars.ScriptableObjects;
 public class SnailMarkerAnimationCreatorEditor : Editor
 {
     public static readonly string TEMPLATE_PATH = "Assets/VRCSDK/Examples/Sample Assets/Animation/AvatarControllerTemplate.controller";
+    private static Texture2D FindTexture(string name) {
+        return AssetDatabase.FindAssets($"t:Texture2D {name}").Select(AssetDatabase.GUIDToAssetPath).Where(p => p.Contains("/Marker/")).Select(AssetDatabase.LoadAssetAtPath<Texture2D>).FirstOrDefault();
+    }
+
     SnailMarkerAnimationCreator obj;
     public void OnEnable()
     {
@@ -242,6 +246,7 @@ public class SnailMarkerAnimationCreatorEditor : Editor
                 name = parameterName,
             },
             value = 1,
+            icon = FindTexture("MarkerDrawing"),
         });
         markerMenu.controls.Add(new VRCExpressionsMenu.Control() {
             name = "Erase All",
@@ -250,6 +255,7 @@ public class SnailMarkerAnimationCreatorEditor : Editor
                 name = parameterName,
             },
             value = 2,
+            icon = FindTexture("MarkerEraseAll"),
         });
 
         WriteAsset(markerMenu, exportPath + "MarkerMenu.asset");
@@ -261,7 +267,8 @@ public class SnailMarkerAnimationCreatorEditor : Editor
             menu.controls.Add(new VRCExpressionsMenu.Control() {
                 name = "Marker",
                 type = VRCExpressionsMenu.Control.ControlType.SubMenu,
-                subMenu = markerMenu
+                subMenu = markerMenu,
+                icon = FindTexture("MarkerDrawing"),
             });
             EditorUtility.SetDirty(menu);
         }
