@@ -24,6 +24,8 @@ public class SnailMarkerAnimationCreatorEditor : Editor
     }
     public override void OnInspectorGUI()
     {
+        base.OnInspectorGUI();
+
         if (!GUILayout.Button("Do everything"))
             return;
         DoEverything();
@@ -131,29 +133,57 @@ public class SnailMarkerAnimationCreatorEditor : Editor
         WriteAsset(draw, exportPath + "Drawing.anim");
     }
 
-    private AnimatorState AddState(string assetPath, AnimatorStateMachine stateMachine, string name, AnimationClip clip, int threshold, string parameterName) {
-        var state = new AnimatorState(){
-            name = name,
-            motion = clip,
-        };
-        stateMachine.AddState(state, Vector3.zero);
-        AssetDatabase.AddObjectToAsset(state, assetPath);
+    private AnimatorState AddState(AnimatorStateMachine stateMachine, string name, AnimationClip clip = null, IEnumerable<AnimatorCondition> enterConditions = null, IEnumerable<AnimatorCondition> exitConditions = null) {
+        var state = stateMachine.AddState(name, new Vector3(200, 100 * stateMachine.states.Length, 0));
+        state.motion = clip;
 
-        var transition = stateMachine.AddAnyStateTransition(state);
-        transition.conditions = new [] {
-            new AnimatorCondition() {
-                mode = AnimatorConditionMode.Equals,
-                parameter = parameterName,
-                threshold = threshold,
-            },
-        };
-        transition.canTransitionToSelf = false;
-        transition.duration = 0;
-        transition.hasExitTime = false;
-        AssetDatabase.AddObjectToAsset(transition, assetPath);
+        if (enterConditions != null) {
+            var enter = stateMachine.AddAnyStateTransition(state);
+            enter.canTransitionToSelf = false;
+            enter.conditions = enterConditions.ToArray();
+            enter.destinationState = state;
+            enter.duration = 0.0f;
+            enter.hasExitTime = false;
+            enter.hasFixedDuration = true;
+        }
+
+        if (exitConditions != null) {
+            exitConditions.ToList().ForEach(c => {
+                var exit = state.AddExitTransition();
+                exit.conditions = new [] { c };
+                exit.duration = 0.0f;
+                exit.hasExitTime = false;
+                exit.hasFixedDuration = true;
+            });
+        }
 
         return state;
     }
+
+    private AnimatorCondition GenerateEqualsCondition(string parameter, int threshold, bool invert = false) {
+        return new AnimatorCondition() {
+            mode = invert ? AnimatorConditionMode.NotEqual : AnimatorConditionMode.Equals,
+            parameter = parameter,
+            threshold = (float)threshold,
+        };
+    }
+
+    private IEnumerable<AnimatorCondition> GenerateDrawingConditions(string parameter, bool isExit = false) {
+        var creator = target as SnailMarkerAnimationCreator;
+
+        var conditions = new List<AnimatorCondition> {
+            GenerateEqualsCondition(parameter, 1, isExit),
+        };
+        if (creator.useGestureLeft) {
+            conditions.Add(GenerateEqualsCondition("GestureLeft", (int)creator.gestureLeft, isExit));
+        }
+        if (creator.useGestureRight) {
+            conditions.Add(GenerateEqualsCondition("GestureRight", (int)creator.gestureRight, isExit));
+        }
+
+        return conditions;
+    }
+
     private string SetupLayer()
     {
         VRCAvatarDescriptor descriptor = avatar.gameObject.GetComponent<VRCAvatarDescriptor>();
@@ -190,19 +220,38 @@ public class SnailMarkerAnimationCreatorEditor : Editor
         var parameterName = controller.MakeUniqueParameterName("MarkerState");
         controller.AddParameter(parameterName, AnimatorControllerParameterType.Int);
 
-        var markerLayer = new AnimatorControllerLayer();
-        markerLayer.name = controller.MakeUniqueLayerName("Marker");
-        markerLayer.stateMachine = new AnimatorStateMachine();
-        markerLayer.stateMachine.name = markerLayer.name;
-        markerLayer.stateMachine.hideFlags = HideFlags.HideInHierarchy;
+        if (!controller.parameters.Any(p => p.name == "GestureLeft")) {
+            controller.AddParameter("GestureLeft", AnimatorControllerParameterType.Int);
+        }
+        if (!controller.parameters.Any(p => p.name == "GestureRight")) {
+            controller.AddParameter("GestureRight", AnimatorControllerParameterType.Int);
+        }
+
+        var layerName = controller.MakeUniqueLayerName("Marker");
+
+        controller.AddLayer(layerName);
+        var markerLayer = controller.layers.First(l => l.name == layerName);
         markerLayer.defaultWeight = 1.0f;
 
-        markerLayer.stateMachine.defaultState = AddState(assetPath, markerLayer.stateMachine, "Wait", null, 0, parameterName);
-        AddState(assetPath, markerLayer.stateMachine, "Drawing", AssetDatabase.LoadAssetAtPath<AnimationClip>(exportPath + "Drawing.anim"), 1, parameterName);
-        AddState(assetPath, markerLayer.stateMachine, "Erase All", AssetDatabase.LoadAssetAtPath<AnimationClip>(exportPath + "EraseAll.anim"), 2, parameterName);
+        var waitState = AddState(markerLayer.stateMachine, "Wait");
+        markerLayer.stateMachine.defaultState = waitState;
 
-        AssetDatabase.AddObjectToAsset(markerLayer.stateMachine, assetPath);
-        controller.AddLayer(markerLayer);
+        AddState(
+            markerLayer.stateMachine,
+            "Drawing",
+            AssetDatabase.LoadAssetAtPath<AnimationClip>(exportPath + "Drawing.anim"),
+            GenerateDrawingConditions(parameterName, false),
+            GenerateDrawingConditions(parameterName, true)
+        );
+        AddState(
+            markerLayer.stateMachine,
+            "Erase All",
+            AssetDatabase.LoadAssetAtPath<AnimationClip>(exportPath + "EraseAll.anim"),
+            new [] { GenerateEqualsCondition(parameterName, 2) },
+            new [] { GenerateEqualsCondition(parameterName, 2, true) }
+        );
+
+        EditorUtility.SetDirty(controller);
 
         return parameterName;
     }
